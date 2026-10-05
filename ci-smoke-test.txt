@@ -1,0 +1,1 @@
+Synthetic CI fixture. This branch will be closed without merging.
