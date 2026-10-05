@@ -1,0 +1,47 @@
+name: check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # The code repo this data repo trusts to run with write access. Must be a repo you control.
+  SITELORE_CODE_REPO: TigerkidYang/sitelore
+  # Pin the tooling to a release tag or commit SHA, never a branch: publish.yml can write to this repo.
+  SITELORE_TOOLS_REF: eac26f90eed2bf37c650833f0aeee780408bd72a
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ env.SITELORE_CODE_REPO }}
+          ref: ${{ env.SITELORE_TOOLS_REF }}
+          path: .sitelore-tools
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Build tools
+        working-directory: .sitelore-tools
+        run: npm ci && npm run build -w packages/core && npm run build -w packages/data-tools
+      - name: Check changed entries
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          mapfile -d '' files < <(git diff --name-only -z "origin/${BASE_REF}...HEAD")
+          # PRs may only touch entry files; everything else is maintained by hand on main.
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::A submission must change exactly one entry"
+            exit 1
+          fi
+          if [[ ! "${files[0]}" =~ ^sites/[^/]+/[^/]+\.md$ ]]; then
+            echo "::error::Submissions may only change files under sites/<host>/<id>.md"
+            exit 1
+          fi
+          node .sitelore-tools/packages/data-tools/dist/cli.js check --root . "${files[0]}"
